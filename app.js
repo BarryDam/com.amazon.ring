@@ -1,14 +1,12 @@
 require('./lib/polyfills');
 const Homey = require('homey');
-const api   = require('./lib/Api.js');
+const api = require('./lib/Api.js');
 //const events = require('events');
-
 
 // !!!! remove next lines before publishing !!!!
 // const LogToFile = require('homey-log-to-file'); // https://github.com/robertklep/homey-log-to-file
 
 class App extends Homey.App {
-
     async onInit() {
         // !!!! remove next lines before publishing !!!!
         /*
@@ -19,33 +17,55 @@ class App extends Homey.App {
         }
         */
 
-        this.log(`${Homey.manifest.id} ${Homey.manifest.version}    initialising --------------`);
+        this.log(
+            `${Homey.manifest.id} ${Homey.manifest.version}    initialising --------------`
+        );
 
         this.lastLocationModes = [];
         this.alarmSystem = { location: {} };
 
         this._api = new api(this.homey);
 
-        this._api.on('ringOnNotification',this._ringOnNotification.bind(this));
-        this._api.on('ringOnDing',this._ringOnDing.bind(this));
-        this._api.on('ringOnData',this._ringOnData.bind(this));
-        this._api.on('ringOnAlarmData',this._ringOnAlarmData.bind(this));
+        this._api.on('ringOnNotification', this._ringOnNotification.bind(this));
+        this._api.on('ringOnDing', this._ringOnDing.bind(this));
+        this._api.on('ringOnData', this._ringOnData.bind(this));
+        this._api.on('ringOnAlarmData', this._ringOnAlarmData.bind(this));
         this._api.on('ringOnLocation', this._ringOnLocation.bind(this));
+        this.log('🔗 All Ring API event listeners registered');
         this.supportsModern = this._api.supportsModern;
 
-        this._triggerLocationModeChangedTo = this.homey.flow.getTriggerCard('ring_location_mode_changed_generic');
+        this._triggerLocationModeChangedTo = this.homey.flow.getTriggerCard(
+            'ring_location_mode_changed_generic'
+        );
         this.registerLocationModeChanged();
 
-        this._conditionLocationMode = this.homey.flow.getConditionCard('ring_location_mode_active');
+        // Add Ring alarm triggered flow card
+        this.log('🎯 Initializing Ring alarm triggered flow card...');
+        this._triggerRingAlarmTriggered = this.homey.flow.getTriggerCard(
+            'ring_alarm_triggered'
+        );
+        this.log(
+            '📋 Ring alarm trigger card object:',
+            !!this._triggerRingAlarmTriggered
+        );
+        this.registerRingAlarmTriggered();
+
+        this._conditionLocationMode = this.homey.flow.getConditionCard(
+            'ring_location_mode_active'
+        );
         this.conditionLocationMode();
 
-        this._setLocationMode = this.homey.flow.getActionCard('change_location_mode');
+        this._setLocationMode = this.homey.flow.getActionCard(
+            'change_location_mode'
+        );
         this.setLocationMode();
 
-        this.log(`${Homey.manifest.id} ${Homey.manifest.version}    initialising done ---------`);
+        this.log(
+            `${Homey.manifest.id} ${Homey.manifest.version}    initialising done ---------`
+        );
 
         // Purge the logfile
-        this.homey.settings.set('myLog', '' );
+        this.homey.settings.set('myLog', '');
 
         await this._api.init();
 
@@ -60,7 +80,7 @@ class App extends Homey.App {
 
     // Called from event emitted from _connectRingAPI() in Api.js
     _ringOnDing(device) {
-        this.homey.emit("ringOnDing", device);
+        this.homey.emit('ringOnDing', device);
     }
 
     // Called from event emitted from _connectRingAPI() in Api.js
@@ -70,13 +90,70 @@ class App extends Homey.App {
 
     // Called from event emitted from _connectRingAPI() in Api.js for Ring Alarm devices
     _ringOnAlarmData(data) {
-        if ( data.catalogId == this.alarmSystem.catalogId ) {
-            if ( this.alarmSystem.mode != data.mode ) {
+        this.log(
+            '🔍 _ringOnAlarmData received data:',
+            JSON.stringify(data, null, 2)
+        );
+
+        if (data.catalogId == this.alarmSystem.catalogId) {
+            this.log(
+                '✅ Data matches alarm system catalogId:',
+                this.alarmSystem.catalogId
+            );
+            if (['some', 'all'].includes(data.mode)) {
                 // Mode changed
-                this.log('this.alarmSystem: ', this.alarmSystem);
-                
-                this.alarmSystem.mode = data.mode
+                this.log(
+                    '🔄 Alarm mode changed from',
+                    this.alarmSystem.mode,
+                    'to',
+                    data.mode
+                );
+                this.log('📊 Full alarm system state:', this.alarmSystem);
+
+                // Check if alarm is triggered - let's check multiple possible trigger conditions
+                const isTriggered =
+                    (data.alarmInfo &&
+                        data.alarmInfo.state === 'burglar-alarm') ||
+                    (data.siren && data.siren.state === 'on');
+
+                this.log('🎯 Checking if alarm is triggered:', { isTriggered });
+
+                if (isTriggered) {
+                    this.log('🚨 ALARM TRIGGERED! Firing flow card...');
+                    this.triggerRingAlarmTriggered(
+                        {
+                            device_name: data.name || 'Ring Alarm',
+                            alarm_mode: data.mode || data.state || 'triggered',
+                            timestamp: new Date().toISOString(),
+                            device_type: data.deviceType || 'alarm',
+                        },
+                        {
+                            device: {
+                                id: data.catalogId,
+                                name: data.name || 'Ring Alarm',
+                            },
+                        }
+                    );
+                } else {
+                    this.log(
+                        'ℹ️ Alarm mode changed but not triggered. Mode:',
+                        data.mode
+                    );
+                }
+
+                this.alarmSystem.mode = data.mode;
+            } else {
+                this.log(
+                    '📝 Alarm data received but mode unchanged:',
+                    data.mode
+                );
             }
+        } else {
+            this.log('❌ Data catalogId does not match alarm system:', {
+                'data.catalogId': data.catalogId,
+                'alarmSystem.catalogId': this.alarmSystem.catalogId,
+                alarmSystem: this.alarmSystem,
+            });
         }
 
         this.homey.emit('ringOnAlarmData', data);
@@ -85,26 +162,30 @@ class App extends Homey.App {
     // Called from event emitted from _connectRingAPI() in Api.js
     _ringOnLocation(newLocationMode) {
         //this.log('_ringOnLocation',newLocationMode);
-        if(this.lastLocationModes.length>0)
-        {
-            let matchedLastLocationMode = this.lastLocationModes.find(lastLocationMode =>{
-                 return lastLocationMode.id==newLocationMode.id;
-            });
-            if(matchedLastLocationMode!=undefined)
-            {
+        if (this.lastLocationModes.length > 0) {
+            let matchedLastLocationMode = this.lastLocationModes.find(
+                (lastLocationMode) => {
+                    return lastLocationMode.id == newLocationMode.id;
+                }
+            );
+            if (matchedLastLocationMode != undefined) {
                 //console.log('Check location mode for remembered location '+matchedLastLocationMode.name+' was in mode '+matchedLastLocationMode.mode+' and now is in mode '+newLocationMode.mode);
-                if(matchedLastLocationMode.mode!=newLocationMode.mode)
-                {
+                if (matchedLastLocationMode.mode != newLocationMode.mode) {
                     //console.log('location mode changed, raise the flow trigger!');
-                    this.triggerLocationModeChanged({oldmode: matchedLastLocationMode.mode, mode: newLocationMode.mode},{location: newLocationMode});
+                    this.triggerLocationModeChanged(
+                        {
+                            oldmode: matchedLastLocationMode.mode,
+                            mode: newLocationMode.mode,
+                        },
+                        { location: newLocationMode }
+                    );
                 }
                 matchedLastLocationMode.mode = newLocationMode.mode;
-            }
-            else {
+            } else {
                 //console.log('recevied new location mode for location '+newLocationMode.name+', there is no old state known for this location');
                 this.lastLocationModes.push(newLocationMode);
             }
-        } else{
+        } else {
             //console.log('recevied new location mode for location '+newLocationMode.name+', there is no old state known for this location');
             this.lastLocationModes.push(newLocationMode);
         }
@@ -154,8 +235,8 @@ class App extends Homey.App {
         return this._api.grabImage(data);
     }
 
-    grabVideo(data,offerSdp) {
-        return this._api.grabVideo(data,offerSdp);
+    grabVideo(data, offerSdp) {
+        return this._api.grabVideo(data, offerSdp);
     }
 
     enableMotion(data, callback) {
@@ -167,7 +248,7 @@ class App extends Homey.App {
     }
 
     logRealtime(event, details) {
-        this.homey.api.realtime(event, details)
+        this.homey.api.realtime(event, details);
         // this.log('Realtime event emitted for', event, details);
     }
 
@@ -177,10 +258,25 @@ class App extends Homey.App {
         this._triggerLocationModeChangedTo.trigger(tokens, state);
     }
 
+    // Ring alarm triggered flow trigger
+    triggerRingAlarmTriggered(tokens, state) {
+        this.log('🔥 triggerRingAlarmTriggered called with tokens:', tokens);
+        this.log('🔥 triggerRingAlarmTriggered called with state:', state);
+
+        if (this._triggerRingAlarmTriggered) {
+            this._triggerRingAlarmTriggered.trigger(tokens, state);
+            this.log('✅ Ring alarm triggered flow card fired successfully');
+        } else {
+            this.log('❌ _triggerRingAlarmTriggered is not defined!');
+        }
+    }
+
     registerLocationModeChanged() {
         this._triggerLocationModeChangedTo
             .registerRunListener((args, state) => {
-                return Promise.resolve( args.location.name === state.location.name );
+                return Promise.resolve(
+                    args.location.name === state.location.name
+                );
             })
             .getArgument('location')
             .registerAutocompleteListener((query, args) => {
@@ -192,15 +288,73 @@ class App extends Homey.App {
             });
     }
 
+    registerRingAlarmTriggered() {
+        this.log('📋 Registering Ring alarm triggered flow card...');
+        this._triggerRingAlarmTriggered
+            .registerRunListener((args, state) => {
+                this.log(
+                    '🏃 Ring alarm trigger run listener called with args:',
+                    args,
+                    'state:',
+                    state
+                );
+                // You can add filtering logic here if needed
+                // For example, filter by specific alarm device or location
+                if (args.alarm_device) {
+                    const matches = args.alarm_device.id === state.device.id;
+                    this.log(
+                        '🔍 Filtering by device ID:',
+                        args.alarm_device.id,
+                        '===',
+                        state.device.id,
+                        '→',
+                        matches
+                    );
+                    return Promise.resolve(matches);
+                }
+                this.log('✅ No device filter, allowing trigger');
+                return Promise.resolve(true);
+            })
+            .getArgument('alarm_device')
+            .registerAutocompleteListener((query, args) => {
+                this.log(
+                    '🔤 Autocomplete requested for alarm devices, query:',
+                    query
+                );
+                return new Promise(async (resolve) => {
+                    try {
+                        const alarmDevices = await this.getRingAlarmDevices();
+                        this.log('📱 Found alarm devices:', alarmDevices);
+                        const filtered = alarmDevices.filter((device) =>
+                            device.name
+                                .toLowerCase()
+                                .includes(query.toLowerCase())
+                        );
+                        this.log('🔍 Filtered devices:', filtered);
+                        resolve(filtered);
+                    } catch (error) {
+                        this.log(
+                            '❌ Error getting alarm devices for autocomplete:',
+                            error
+                        );
+                        resolve([]);
+                    }
+                });
+            });
+        this.log('✅ Ring alarm triggered flow card registration complete');
+    }
+
     // flow condition
     conditionLocationMode() {
         this._conditionLocationMode
             .registerRunListener((args, state) => {
                 return new Promise((resolve, reject) => {
-                    var matchedLocationMode = this.lastLocationModes.find(lastLocationMode =>{
-                        return lastLocationMode.id==args.location.id;
-                    });
-                    if(matchedLocationMode!=undefined) {
+                    var matchedLocationMode = this.lastLocationModes.find(
+                        (lastLocationMode) => {
+                            return lastLocationMode.id == args.location.id;
+                        }
+                    );
+                    if (matchedLocationMode != undefined) {
                         //this.log ('stored location mode found for location ' + matchedLocationMode.name);
                         resolve(matchedLocationMode.mode === args.mode);
                     } else {
@@ -212,9 +366,9 @@ class App extends Homey.App {
             .getArgument('location')
             .registerAutocompleteListener((query, args) => {
                 return new Promise(async (resolve) => {
-                const locations = await this._api.userLocations();
-                //this.log ('I found these locations',locations);
-                resolve(locations);
+                    const locations = await this._api.userLocations();
+                    //this.log ('I found these locations',locations);
+                    resolve(locations);
                 });
             });
     }
@@ -225,21 +379,22 @@ class App extends Homey.App {
             .registerRunListener(async (args, state) => {
                 //this.log ('attempt to switch location ('+args.location.name+') to new state: '+args.mode);
                 return new Promise((resolve, reject) => {
-                    this._api.setLocationMode(args.location.id,args.mode)
+                    this._api
+                        .setLocationMode(args.location.id, args.mode)
                         .then(() => {
                             resolve(true);
                         })
                         .catch((error) => {
                             reject(error);
-                        })
+                        });
                 });
             })
             .getArgument('location')
             .registerAutocompleteListener((query, args) => {
                 return new Promise(async (resolve) => {
-                const locations = await this._api.userLocations();
-                //this.log ('I found these locations',locations);
-                resolve(locations);
+                    const locations = await this._api.userLocations();
+                    //this.log ('I found these locations',locations);
+                    resolve(locations);
                 });
             });
     }
@@ -248,15 +403,13 @@ class App extends Homey.App {
     async getDevicesInfo() {
         //this.log('getDevicesInfo is called through api.js')
         return new Promise((resolve, reject) => {
-
             this.homey.app.getRingDevices((error, result) => {
                 if (error) {
-                return reject(error);
+                    return reject(error);
                 }
 
                 resolve(result);
             });
-
         });
     }
 
@@ -264,23 +417,27 @@ class App extends Homey.App {
     // - Called from multiple functions
     async writeLog(logLine) {
         let savedHistory = this.homey.settings.get('myLog');
-        if ( savedHistory != undefined ) {
+        if (savedHistory != undefined) {
             // cleanup history
             let lineCount = savedHistory.split(/\r\n|\r|\n/).length;
-            if ( lineCount > 200 ) {
-                let deleteItems = parseInt( lineCount * 0.2 );
+            if (lineCount > 200) {
+                let deleteItems = parseInt(lineCount * 0.2);
                 let savedHistoryArray = savedHistory.split(/\r\n|\r|\n/);
-                let cleanUp = savedHistoryArray.splice(-1*deleteItems, deleteItems, "" );
+                let cleanUp = savedHistoryArray.splice(
+                    -1 * deleteItems,
+                    deleteItems,
+                    ''
+                );
                 savedHistory = savedHistoryArray.join('\n');
             }
             // end cleanup
-            logLine = this.getDateTime() + logLine + "\n" + savedHistory;
+            logLine = this.getDateTime() + logLine + '\n' + savedHistory;
         } else {
-            this.log("writeLog: savedHistory is undefined!")
+            this.log('writeLog: savedHistory is undefined!');
         }
-        this.homey.settings.set('myLog', logLine );
+        this.homey.settings.set('myLog', logLine);
 
-        logLine = "";
+        logLine = '';
     }
 
     // Support functions
@@ -288,28 +445,47 @@ class App extends Homey.App {
     // Returns a date timestring including milliseconds to be used in loglines
     // - Called from multiple functions
     getDateTime() {
-        let timezone = this.homey.clock.getTimezone()
-        let date = new Date(new Date().toLocaleString("en-US", {timeZone: timezone}));
+        let timezone = this.homey.clock.getTimezone();
+        let date = new Date(
+            new Date().toLocaleString('en-US', { timeZone: timezone })
+        );
         let dateMsecs = new Date();
 
         let hour = date.getHours();
-        hour = (hour < 10 ? "0" : "") + hour;
-        let min  = date.getMinutes();
-        min = (min < 10 ? "0" : "") + min;
-        let sec  = date.getSeconds();
-        sec = (sec < 10 ? "0" : "") + sec;
-        let msec = ("00" + dateMsecs.getMilliseconds()).slice(-3)
+        hour = (hour < 10 ? '0' : '') + hour;
+        let min = date.getMinutes();
+        min = (min < 10 ? '0' : '') + min;
+        let sec = date.getSeconds();
+        sec = (sec < 10 ? '0' : '') + sec;
+        let msec = ('00' + dateMsecs.getMilliseconds()).slice(-3);
         let year = date.getFullYear();
         let month = date.getMonth() + 1;
-        month = (month < 10 ? "0" : "") + month;
-        let day  = date.getDate();
-        day = (day < 10 ? "0" : "") + day;
-        return day + "-" + month + "-" + year + "  ||  " + hour + ":" + min + ":" + sec + "." + msec + "  ||  ";
+        month = (month < 10 ? '0' : '') + month;
+        let day = date.getDate();
+        day = (day < 10 ? '0' : '') + day;
+        return (
+            day +
+            '-' +
+            month +
+            '-' +
+            year +
+            '  ||  ' +
+            hour +
+            ':' +
+            min +
+            ':' +
+            sec +
+            '.' +
+            msec +
+            '  ||  '
+        );
     }
 
     // returns the supplied version in a usable format; version.major, version.minor, version.path
     parseVersionString(version) {
-        if (typeof(version) != 'string') { return false; }
+        if (typeof version != 'string') {
+            return false;
+        }
         var x = version.split('.');
         // parse from string or default to 0 if can't parse
         var maj = parseInt(x[0]) || 0;
@@ -318,10 +494,9 @@ class App extends Homey.App {
         return {
             major: maj,
             minor: min,
-            patch: pat
-        }
+            patch: pat,
+        };
     }
-
 }
 
 module.exports = App;
