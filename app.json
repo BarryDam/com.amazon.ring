@@ -1129,6 +1129,87 @@
             "example": "armed"
           }
         ]
+      },
+      {
+        "id": "ring_alarm_triggered",
+        "title": {
+            "en": "Ring alarm goes off",
+            "da": "Ring alarm er udløst",
+            "de": "Ring-Alarm wurde ausgelöst",
+            "es": "La alarma Ring se ha activado",
+            "fr": "L'alarme Ring s'est déclenchée",
+            "it": "L'allarme Ring è stato attivato",
+            "nl": "Ring alarm gaat af",
+            "no": "Ring-alarm er utløst",
+            "pl": "Alarm Ring został wyzwolony",
+            "sv": "Ring-larmet har utlösts",
+            "ko": "링 알람이 울립니다"
+        },
+        "titleFormatted": {
+            "en": "Ring alarm [[location]] goes off",
+            "da": "Ring alarm [[location]] er udløst",
+            "de": "Ring-Alarm [[location]] wurde ausgelöst",
+            "es": "La alarma Ring [[location]] se ha activado",
+            "fr": "L'alarme Ring [[location]] s'est déclenchée",
+            "it": "L'allarme Ring [[location]] è stato attivato",
+            "nl": "Ring alarm [[location]] gaat af",
+            "no": "Ring-alarm [[location]] er utløst",
+            "pl": "Alarm Ring [[location]] został wyzwolony",
+            "sv": "Ring-larmet [[location]] har utlösts",
+            "ko": "링 알람 [[location]]이 울립니다"
+        },
+        "args": [
+            {
+                "name": "location",
+                "title": {
+                    "en": "Location",
+                    "da": "Placering",
+                    "de": "Ort",
+                    "es": "Ubicación",
+                    "fr": "Emplacement",
+                    "it": "Posizione",
+                    "nl": "Locatie",
+                    "no": "Plassering",
+                    "pl": "Lokalizacja",
+                    "sv": "Plats",
+                    "ko": "위치"
+                },
+                "type": "autocomplete",
+                "placeholder": {
+                    "en": "NOTE: You must have a location setup in Ring",
+                    "da": "BEMÆRK: Du skal have en placering oprettet i Ring",
+                    "de": "HINWEIS: Sie müssen einen Standort in Ring eingerichtet haben",
+                    "es": "NOTA: Debe tener una ubicación configurada en Ring",
+                    "fr": "REMARQUE: Vous devez avoir configuré un emplacement dans Ring",
+                    "it": "NOTA: È necessario avere una posizione configurata in Ring",
+                    "nl": "LET OP: U moet een locatie instellen in Ring",
+                    "no": "MERK: Du må ha en plassering satt opp i Ring",
+                    "pl": "UWAGA: Musisz mieć ustawioną lokalizację w Ring",
+                    "sv": "OBS: Du måste ha en plats inställd i Ring",
+                    "ko": "참고: Ring에서 위치가 설정되어 있어야 합니다"
+                }
+            }
+        ],
+        "tokens": [
+            {
+                "title": {
+                    "en": "Time triggered",
+                    "da": "Tid udløst",
+                    "de": "Zeit ausgelöst",
+                    "es": "Hora activada",
+                    "fr": "Heure déclenchée",
+                    "it": "Ora attivata",
+                    "nl": "Tijd geactiveerd",
+                    "no": "Tid utløst",
+                    "pl": "Czas wyzwolenia",
+                    "sv": "Tid utlöst",
+                    "ko": "트리거된 시간"
+                },
+                "name": "timestamp",
+                "type": "string",
+                "example": "2025-10-13T14:30:00.000Z"
+            }
+        ]
       }
     ],
     "actions": [
